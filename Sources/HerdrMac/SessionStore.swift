@@ -51,6 +51,8 @@ final class SessionStore: ObservableObject {
     @Published var selectedPane: String?
     @Published var paneSearchRequest: (paneID: String, token: UUID)?
     @Published private(set) var powerStatus: DevicePowerStatus?
+    /// Keyed by workspace ID; workspaces outside a branch are absent.
+    @Published private(set) var gitStatus: [String: WorkspaceGitStatus] = [:]
     @Published var connected = false
     @Published var connecting = false
     @Published var busy = false
@@ -83,6 +85,11 @@ final class SessionStore: ObservableObject {
     private var powerTask: Task<Void, Never>?
     private var powerReadID: UUID?
     private var nextPowerRefresh = Date.distantPast
+    private let gitReader: @MainActor (DeviceProfile, [String]) async throws -> [String: WorkspaceGitStatus]
+    private var gitTask: Task<Void, Never>?
+    private var gitReadID: UUID?
+    private var nextGitRefresh = Date.distantPast
+    private var gitDirectories: [String: String] = [:]
     private var refreshingGeneration: UUID?
     private var serverProcess: Process?
     private var selectionRevision = 0
@@ -92,10 +99,12 @@ final class SessionStore: ObservableObject {
     private var pendingSplitResizes = 0
     private var splitResizeTask: Task<Void, Never>?
 
-    init(profile: DeviceProfile, defaults: UserDefaults = .standard, tunnel: SSHTunnel? = nil, client: (any HerdrRequesting)? = nil, fileTransfer: RemoteFileTransfer? = nil, powerReader: @escaping @MainActor (DeviceProfile) async throws -> DevicePowerStatus? = { try await DevicePowerStatus.read($0) }) {
+    init(profile: DeviceProfile, defaults: UserDefaults = .standard, tunnel: SSHTunnel? = nil, client: (any HerdrRequesting)? = nil, fileTransfer: RemoteFileTransfer? = nil, powerReader: @escaping @MainActor (DeviceProfile) async throws -> DevicePowerStatus? = { try await DevicePowerStatus.read($0) },
+         gitReader: @escaping @MainActor (DeviceProfile, [String]) async throws -> [String: WorkspaceGitStatus] = { try await WorkspaceGitStatus.read($0, directories: $1) }) {
         self.profile = profile
         self.defaults = defaults
         self.powerReader = powerReader
+        self.gitReader = gitReader
         tabOrder = defaults.dictionary(forKey: "tabOrder:\(profile.id.uuidString)") as? [String: [String]] ?? [:]
         self.tunnel = tunnel ?? SSHTunnel()
         self.fileTransfer = fileTransfer ?? RemoteFileTransfer()
@@ -221,6 +230,7 @@ final class SessionStore: ObservableObject {
     func disconnect() {
         pollTask?.cancel(); pollTask = nil
         clearPowerStatus()
+        clearGitStatus()
         connectionGeneration = UUID()
         for transfer in fileTransfers.values { transfer.cancel() }
         paneMoveID = nil
@@ -262,6 +272,7 @@ final class SessionStore: ObservableObject {
             } else { path = (socketPath as NSString).expandingTildeInPath }
             if effectiveSocketPath != path {
                 clearPowerStatus()
+                clearGitStatus()
                 effectiveSocketPath = path
                 client = HerdrClient(socketPath: path)
             }
@@ -307,6 +318,7 @@ final class SessionStore: ObservableObject {
             }
             if !connected { connected = true }
             refreshPowerIfNeeded()
+            refreshGitIfNeeded()
             if connectionError != nil { connectionError = nil }
             persistSelection()
         } catch {
@@ -340,6 +352,51 @@ final class SessionStore: ObservableObject {
         powerReadID = nil
         nextPowerRefresh = .distantPast
         if powerStatus != nil { powerStatus = nil }
+    }
+
+    /// Like herdr, a workspace's repository follows the working directory of its first tab's first pane.
+    var workspaceGitDirectories: [String: String] {
+        var result: [String: String] = [:]
+        for space in workspaces {
+            guard let tab = tabs.first(where: { $0.workspaceID == space.id }),
+                  let pane = panes.first(where: { $0.tabID == tab.id }),
+                  let directory = pane.cwd ?? pane.foregroundCwd, !directory.isEmpty else { continue }
+            result[space.id] = directory
+        }
+        return result
+    }
+
+    /// Called by the session poll; git runs in its own task, sooner when a workspace's directory changes.
+    /// A failed read keeps the last branches rather than blanking the sidebar on a transient SSH error.
+    func refreshGitIfNeeded(now: Date = Date()) {
+        guard connected, !suspended, gitTask == nil else { return }
+        let directories = workspaceGitDirectories
+        guard now >= nextGitRefresh || directories != gitDirectories else { return }
+        let id = UUID()
+        gitReadID = id
+        gitDirectories = directories
+        nextGitRefresh = now.addingTimeInterval(isRemote ? 20 : 5)
+        let profile = profile, reader = gitReader
+        let unique = Array(Set(directories.values)).sorted()
+        gitTask = Task { [weak self] in
+            let byDirectory = try? await reader(profile, unique)
+            guard let self, !Task.isCancelled, self.gitReadID == id else { return }
+            if let byDirectory {
+                let status = directories.compactMapValues { byDirectory[$0] }
+                if self.gitStatus != status { self.gitStatus = status }
+            }
+            self.gitTask = nil
+            self.gitReadID = nil
+        }
+    }
+
+    private func clearGitStatus() {
+        gitTask?.cancel()
+        gitTask = nil
+        gitReadID = nil
+        nextGitRefresh = .distantPast
+        gitDirectories = [:]
+        if !gitStatus.isEmpty { gitStatus = [:] }
     }
 
     func selectSpace(_ space: Workspace) {

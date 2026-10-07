@@ -122,7 +122,11 @@ struct DeviceSidebarView: View {
                             .accessibilityHidden(!showShortcutHints)
                     }
                 }
-                Text("\(space.tabCount) tabs · \(space.paneCount) panes").font(.system(size: 10)).foregroundStyle(.secondary)
+                if let git = session.gitStatus[space.id] {
+                    GitStatusLine(status: git).help("\(space.tabCount) tabs · \(space.paneCount) panes")
+                } else {
+                    Text("\(space.tabCount) tabs · \(space.paneCount) panes").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
             }.padding(.horizontal, 8).padding(.vertical, 7).padding(.leading, 16)
                 .contentShape(Rectangle())
                 .background(selected ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
@@ -195,5 +199,20 @@ struct DevicePowerIndicator: View {
         case .mains:
             return "Connected to power · No internal battery"
         }
+    }
+}
+
+/// herdr's second sidebar row: the branch, then ↑ahead/↓behind its upstream when non-zero.
+struct GitStatusLine: View {
+    let status: WorkspaceGitStatus
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(status.branch).lineLimit(1).truncationMode(.tail).foregroundStyle(.secondary)
+            if status.ahead > 0 { Text("↑\(status.ahead)").foregroundStyle(.green).fixedSize() }
+            if status.behind > 0 { Text("↓\(status.behind)").foregroundStyle(.orange).fixedSize() }
+        }
+        .font(.system(size: 10, design: .monospaced))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Branch \(status.branch)" + (status.ahead > 0 ? ", \(status.ahead) ahead" : "") + (status.behind > 0 ? ", \(status.behind) behind" : ""))
     }
 }

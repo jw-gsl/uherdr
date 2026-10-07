@@ -21,7 +21,7 @@ open dist/Herdr.app
 
 Open `Package.swift` in Xcode to develop the app, or use `swift build` and `swift run HerdrCoreTests` from a terminal. Swift Package Manager downloads GhosttyTerminal's checksummed native XCFramework and MSDisplayLink on the first build. The pinned Swift wrapper is vendored in this repository.
 
-The sidebar groups spaces and agents by device. Beside each computer icon, a battery outline shows that Mac’s charge percentage, with a bolt when connected to power; Macs without an internal battery show a plug. Power status refreshes on connection or reconnection and every minute while connected. Disconnected devices and unavailable readings hide the indicator. **This Mac** uses your default local herdr socket and preserves existing connection preferences. Use the menu beside a device to edit its socket and local herdr executable. Start herdr first, or use the local device's Start Server button. Quit detaches the client; shells and agents remain owned by herdr.
+The sidebar groups spaces and agents by device. Beside each computer icon, a battery outline shows that Mac’s charge percentage, with a bolt when connected to power; Macs without an internal battery show a plug. Power status refreshes on connection or reconnection and every minute while connected. Disconnected devices and unavailable readings hide the indicator. **This Mac** uses your default local herdr socket and preserves existing connection preferences. Under each space, the sidebar shows its Git branch with ↑ahead / ↓behind its upstream, as herdr's own sidebar does; it follows the first tab's first pane's directory, refreshes every 5 seconds (20 seconds over SSH, one connection for all spaces), and spaces outside a branch show their tab and pane counts instead. Use the menu beside a device to edit its socket and local herdr executable. Start herdr first, or use the local device's Start Server button. Quit detaches the client; shells and agents remain owned by herdr.
 
 ## Connect another device over SSH
 
@@ -77,6 +77,7 @@ bash scripts/test-terminal-paste.sh # End-to-end long paste (stock Herdr 0.9.0+)
 bash scripts/test-agent-file-drops.sh # Opt-in: real Codex/Claude text+image drops, local and loopback SSH
 bash scripts/test-tab-drag.sh # Tab ordering, persistence, and drag validation
 bash scripts/test-performance.sh # Polling and terminal publication regressions
+bash scripts/test-git-status.sh # Sidebar branch polling, intervals, directory changes and disconnect
 ./scripts/test.sh         # Also starts and cleans up an isolated herdr server
 bash scripts/test-agent-icons.sh # Agent marks: coverage of herdr's agents, sources, sizes, safe lookup
 bash scripts/test-devices.sh # Two isolated servers, overlapping IDs, and forwarded terminal control

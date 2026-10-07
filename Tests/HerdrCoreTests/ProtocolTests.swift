@@ -20,6 +20,7 @@ import HerdrCore
         try NativeTerminalTests.runSocketBackpressure()
         try await DeviceProfileTests.run()
         try await DevicePowerTests.run()
+        try await WorkspaceGitTests.run()
         try await FileTransferTests.run()
         TerminalStartSizeTests.run()
         await TerminalStartSizeTests.runGate()
